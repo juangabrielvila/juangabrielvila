@@ -1,0 +1,12 @@
+{
+  "name": "digital-printing",
+  "version": "1.0.0",
+  "description": "Skills and an orchestrator agent for preparing PDFs for digital printing — page resize, grayscale, footer/page-number stripping, page removal, binding optimization, watermarks, footer burn-ins, cover pages, font embedding, transparency flattening, image downsampling, color profile normalization, metadata strip/write, bleed-safety verification, job folder bundling, formal print orders, and email/Drive sharing to a digital printer.",
+  "author": {
+    "name": "Daniel Rosehill",
+    "url": "https://github.com/danielrosehill"
+  },
+  "repository": "https://github.com/danielrosehill/Digital-Printing-Plugin",
+  "license": "MIT",
+  "keywords": ["pdf", "printing", "document-prep", "prepress", "digital-printing"]
+}
