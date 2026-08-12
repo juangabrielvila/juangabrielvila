@@ -117,35 +117,46 @@ def draw_running_head(c: Canvas, page_num: int, text: str) -> None:
     c.setFillColor(INK)
 
 
-def draw_prompt_page(c: Canvas, page_num: int, prompt: str, running_head: str) -> None:
-    """Journal prompt at top, light rules for handwriting below."""
+def _fill_rules(c: Canvas, x: float, top_y: float, bottom_limit: float, w: float, rule_gap: float = 22.0) -> None:
+    """Draw ruled lines starting at top_y, moving down until bottom_limit."""
+    c.setStrokeColor(RULE)
+    c.setLineWidth(0.4)
+    yy = top_y
+    while yy >= bottom_limit:
+        c.line(x, yy, x + w, yy)
+        yy -= rule_gap
+
+
+def draw_prompt_page(c: Canvas, page_num: int, prompt: str, running_head: str, prompt_number: int | None = None) -> None:
+    """Journal prompt near top with breathing room, ruled lines fill to bottom."""
     x, y, w, h = text_box(page_num)
     draw_running_head(c, page_num, running_head)
 
+    # prompt-number tag
+    top_y = y + h - 18
+    if prompt_number is not None:
+        c.setFillColor(MUTED)
+        c.setFont(FONT_SANS_BOLD, 9)
+        c.drawString(x, top_y, f"NO. {prompt_number:02d}")
+        top_y -= 14
+
     # prompt block
     c.setFillColor(INK)
-    c.setFont(FONT_SERIF_ITALIC, 12.5)
-    prompt_lines = _wrap(prompt, FONT_SERIF_ITALIC, 12.5, w)
-    top_y = y + h - 6
-    line_h = 16
+    c.setFont(FONT_SERIF_ITALIC, 13.5)
+    prompt_lines = _wrap(prompt, FONT_SERIF_ITALIC, 13.5, w)
+    line_h = 18
     for i, line in enumerate(prompt_lines):
         c.drawString(x, top_y - i * line_h, line)
-    prompt_bottom = top_y - len(prompt_lines) * line_h - 8
+    prompt_bottom = top_y - len(prompt_lines) * line_h - 12
 
     # thin divider
-    c.setStrokeColor(RULE)
-    c.setLineWidth(0.4)
-    c.line(x, prompt_bottom, x + w, prompt_bottom)
+    c.setStrokeColor(ACCENT)
+    c.setLineWidth(0.6)
+    c.line(x, prompt_bottom, x + 32, prompt_bottom)
 
-    # ruled lines for handwriting
-    rule_gap = 22
-    first_rule = prompt_bottom - rule_gap
-    yy = first_rule
-    while yy > y + 4:
-        c.setStrokeColor(RULE)
-        c.setLineWidth(0.4)
-        c.line(x, yy, x + w, yy)
-        yy -= rule_gap
+    # ruled lines fill remaining space
+    first_rule = prompt_bottom - 24
+    _fill_rules(c, x, first_rule, y + 6, w, rule_gap=22)
 
     draw_page_number(c, page_num)
 
@@ -163,32 +174,62 @@ def draw_section_title(
     heading: str,
     subhead: str = "",
 ) -> None:
-    """Full-page section opener, centered, no page number."""
+    """Full-page section opener. Oversized numeral watermark for visual weight,
+    kicker + heading + subhead grouped at the optical center, decorative bottom
+    rule for balance.
+    """
     cx = PAGE_W / 2
+
+    # oversized muted numeral watermark, tucked in the lower third for balance
+    numeral = _kicker_to_numeral(kicker)
+    if numeral:
+        c.setFillColor(HexColor("#e8ecee"))
+        # scale by numeral width so 'I' isn't tiny and 'VIII' isn't overflowing
+        size = 160 if len(numeral) >= 3 else 200 if len(numeral) == 2 else 180
+        c.setFont(FONT_SERIF_BOLD, size)
+        c.drawCentredString(cx, PAGE_H * 0.20, numeral)
+
+    # kicker
     c.setFillColor(MUTED)
-    c.setFont(FONT_SANS_BOLD, 9)
-    c.drawCentredString(cx, PAGE_H * 0.62, kicker.upper())
+    c.setFont(FONT_SANS_BOLD, 10)
+    c.drawCentredString(cx, PAGE_H * 0.66, kicker.upper())
 
     # accent rule
     c.setStrokeColor(ACCENT)
-    c.setLineWidth(0.8)
-    c.line(cx - 20, PAGE_H * 0.60, cx + 20, PAGE_H * 0.60)
+    c.setLineWidth(1.0)
+    c.line(cx - 24, PAGE_H * 0.64, cx + 24, PAGE_H * 0.64)
 
+    # heading
     c.setFillColor(INK)
-    c.setFont(FONT_SERIF_BOLD, 26)
-    # heading may be one or two lines
-    heading_lines = _wrap(heading, FONT_SERIF_BOLD, 26, PAGE_W - 2 * INCH)
-    y = PAGE_H * 0.54
+    c.setFont(FONT_SERIF_BOLD, 34)
+    heading_lines = _wrap(heading, FONT_SERIF_BOLD, 34, PAGE_W - 1.6 * INCH)
+    y = PAGE_H * 0.58
     for i, line in enumerate(heading_lines):
-        c.drawCentredString(cx, y - i * 30, line)
+        c.drawCentredString(cx, y - i * 38, line)
 
+    # subhead
     if subhead:
-        c.setFont(FONT_SERIF_ITALIC, 12)
+        c.setFont(FONT_SERIF_ITALIC, 13)
         c.setFillColor(MUTED)
-        sub_lines = _wrap(subhead, FONT_SERIF_ITALIC, 12, PAGE_W - 2.2 * INCH)
-        sy = y - len(heading_lines) * 30 - 18
+        sub_lines = _wrap(subhead, FONT_SERIF_ITALIC, 13, PAGE_W - 2 * INCH)
+        sy = y - len(heading_lines) * 38 - 20
         for i, line in enumerate(sub_lines):
-            c.drawCentredString(cx, sy - i * 16, line)
+            c.drawCentredString(cx, sy - i * 17, line)
+
+    # no explicit bottom rule — numeral watermark carries the lower half
+
+
+_ROMAN = {"one": "I", "two": "II", "three": "III", "four": "IV", "five": "V",
+          "six": "VI", "seven": "VII", "eight": "VIII"}
+
+
+def _kicker_to_numeral(kicker: str) -> str:
+    """Extract 'Two' from 'Section Two' -> 'II'. Empty string if not found."""
+    parts = kicker.lower().replace("·", " ").split()
+    for p in parts:
+        if p in _ROMAN:
+            return _ROMAN[p]
+    return ""
 
 
 def draw_exercise_page(
@@ -197,36 +238,76 @@ def draw_exercise_page(
     title: str,
     intro: str,
     running_head: str,
+    steps: list[str] | None = None,
+    try_it_prompt: str = "Try it now.",
     with_lines: bool = True,
 ) -> None:
-    """Named exercise page: bold title, italic intro, optional practice lines."""
+    """Named exercise page. Header + intro paragraph + optional numbered steps +
+    a "try it now" divider, then ruled lines that fill to the bottom margin.
+
+    When `steps` is passed, they render as numbered lines under the intro. When
+    with_lines is True, ruled lines fill the remainder of the page for practice.
+    """
     x, y, w, h = text_box(page_num)
     draw_running_head(c, page_num, running_head)
 
+    # kicker + title
+    c.setFillColor(MUTED)
+    c.setFont(FONT_SANS_BOLD, 8.5)
+    c.drawString(x, y + h - 8, "PRACTICE")
+
     c.setFillColor(INK)
-    c.setFont(FONT_SANS_BOLD, 13)
-    c.drawString(x, y + h - 4, title.upper())
+    c.setFont(FONT_SERIF_BOLD, 22)
+    title_lines = _wrap(title, FONT_SERIF_BOLD, 22, w)
+    title_top = y + h - 32
+    for i, line in enumerate(title_lines):
+        c.drawString(x, title_top - i * 24, line)
+    y_cursor = title_top - len(title_lines) * 24 - 6
 
+    # accent rule under title
     c.setStrokeColor(ACCENT)
-    c.setLineWidth(0.8)
-    c.line(x, y + h - 12, x + 28, y + h - 12)
+    c.setLineWidth(0.9)
+    c.line(x, y_cursor, x + 36, y_cursor)
+    y_cursor -= 18
 
-    c.setFont(FONT_SERIF, 11)
-    intro_lines = _wrap(intro, FONT_SERIF, 11, w)
-    line_h = 15
-    intro_top = y + h - 30
-    for i, line in enumerate(intro_lines):
-        c.drawString(x, intro_top - i * line_h, line)
-    intro_bottom = intro_top - len(intro_lines) * line_h - 10
+    # intro paragraph
+    c.setFillColor(INK)
+    c.setFont(FONT_SERIF, 11.5)
+    intro_lines = _wrap(intro, FONT_SERIF, 11.5, w)
+    line_h = 16
+    for line in intro_lines:
+        c.drawString(x, y_cursor, line)
+        y_cursor -= line_h
+    y_cursor -= 6
+
+    # optional numbered steps
+    if steps:
+        c.setFont(FONT_SERIF, 11)
+        step_line_h = 15
+        for i, step in enumerate(steps, start=1):
+            label = f"{i}."
+            c.setFont(FONT_SANS_BOLD, 10)
+            c.setFillColor(ACCENT)
+            c.drawString(x, y_cursor, label)
+            c.setFont(FONT_SERIF, 11)
+            c.setFillColor(INK)
+            wrapped = _wrap(step, FONT_SERIF, 11, w - 22)
+            for j, wline in enumerate(wrapped):
+                c.drawString(x + 22, y_cursor - j * step_line_h, wline)
+            y_cursor -= len(wrapped) * step_line_h + 6
+        y_cursor -= 4
 
     if with_lines:
-        rule_gap = 22
-        yy = intro_bottom - 4
-        while yy > y + 4:
-            c.setStrokeColor(RULE)
-            c.setLineWidth(0.4)
-            c.line(x, yy, x + w, yy)
-            yy -= rule_gap
+        # "Try it now." divider
+        c.setStrokeColor(RULE)
+        c.setLineWidth(0.4)
+        c.line(x, y_cursor, x + w, y_cursor)
+        c.setFont(FONT_SANS_BOLD, 8.5)
+        c.setFillColor(MUTED)
+        c.drawString(x, y_cursor - 12, try_it_prompt.upper())
+        y_cursor -= 26
+
+        _fill_rules(c, x, y_cursor, y + 6, w, rule_gap=22)
 
     draw_page_number(c, page_num)
 
@@ -238,58 +319,89 @@ def draw_tracker_page(
     running_head: str,
     days: list[str],
     columns: list[str],
+    subtitle: str = "",
 ) -> None:
-    """Weekly grid: rows = days, columns = things to note."""
+    """Weekly grid: rows = days, columns = things to note.
+
+    Row height auto-sizes to fill the printable page height so every cell has
+    real room to write in. Column labels wrap onto up to two lines so they
+    never collide.
+    """
     x, y, w, h = text_box(page_num)
     draw_running_head(c, page_num, running_head)
 
+    # kicker + title
+    c.setFillColor(MUTED)
+    c.setFont(FONT_SANS_BOLD, 8.5)
+    c.drawString(x, y + h - 8, "TRACKER")
+
     c.setFillColor(INK)
-    c.setFont(FONT_SANS_BOLD, 12)
-    c.drawString(x, y + h - 4, title.upper())
+    c.setFont(FONT_SERIF_BOLD, 20)
+    c.drawString(x, y + h - 32, title)
 
     c.setStrokeColor(ACCENT)
-    c.setLineWidth(0.8)
-    c.line(x, y + h - 12, x + 28, y + h - 12)
+    c.setLineWidth(0.9)
+    c.line(x, y + h - 38, x + 36, y + h - 38)
 
-    grid_top = y + h - 34
-    row_h = 32
+    y_cursor = y + h - 60
+    if subtitle:
+        c.setFont(FONT_SERIF_ITALIC, 10.5)
+        c.setFillColor(MUTED)
+        sub_lines = _wrap(subtitle, FONT_SERIF_ITALIC, 10.5, w)
+        for line in sub_lines:
+            c.drawString(x, y_cursor, line)
+            y_cursor -= 13
+        y_cursor -= 6
+
+    grid_top = y_cursor
+    grid_bottom = y + 4
     n_rows = len(days)
-    grid_h = row_h * (n_rows + 1)  # +1 for header
-    grid_bottom = grid_top - grid_h
-
-    # column layout: first column is fixed narrow, rest split remaining width
-    day_col_w = 0.9 * INCH
-    remaining = w - day_col_w
+    header_h = 26  # room for two-line column labels
+    row_h = (grid_top - grid_bottom - header_h) / n_rows
     n_cols = len(columns)
+
+    # column widths — day col fixed narrow, rest share the remainder
+    day_col_w = 0.7 * INCH
+    remaining = w - day_col_w
     col_w = remaining / n_cols
 
-    # header row
-    c.setFont(FONT_SANS_BOLD, 9)
+    # header cells: wrap labels to fit up to 2 lines
+    c.setFont(FONT_SANS_BOLD, 8.5)
     c.setFillColor(MUTED)
-    c.drawString(x + 4, grid_top - 12, "DAY")
+    header_bottom = grid_top - header_h
+    c.drawString(x + 4, header_bottom + 8, "DAY")
     for i, col_label in enumerate(columns):
         cx = x + day_col_w + i * col_w + 4
-        c.drawString(cx, grid_top - 12, col_label.upper())
+        max_label_w = col_w - 8
+        wrapped = _wrap(col_label.upper(), FONT_SANS_BOLD, 8.5, max_label_w)[:2]
+        if len(wrapped) == 1:
+            c.drawString(cx, header_bottom + 8, wrapped[0])
+        else:
+            c.drawString(cx, header_bottom + 14, wrapped[0])
+            c.drawString(cx, header_bottom + 2, wrapped[1])
 
-    # grid lines
+    # horizontal grid lines
     c.setStrokeColor(RULE)
     c.setLineWidth(0.4)
-    for r in range(n_rows + 2):
-        yy = grid_top - r * row_h
+    c.line(x, grid_top, x + w, grid_top)
+    c.line(x, header_bottom, x + w, header_bottom)
+    for r in range(1, n_rows + 1):
+        yy = header_bottom - r * row_h
         c.line(x, yy, x + w, yy)
     # verticals
     xs = [x, x + day_col_w]
     for i in range(1, n_cols + 1):
         xs.append(x + day_col_w + i * col_w)
     for xx in xs:
-        c.line(xx, grid_top, xx, grid_bottom)
+        c.line(xx, grid_top, xx, header_bottom - n_rows * row_h)
 
-    # day labels
-    c.setFont(FONT_SERIF, 10)
+    # day labels — vertically centered in each row
+    c.setFont(FONT_SERIF, 10.5)
     c.setFillColor(INK)
     for i, day in enumerate(days):
-        yy = grid_top - (i + 1) * row_h - 20
-        c.drawString(x + 6, yy, day)
+        cell_top = header_bottom - i * row_h
+        cell_center_y = cell_top - row_h / 2 - 3
+        c.drawString(x + 8, cell_center_y, day)
 
     draw_page_number(c, page_num)
 
@@ -324,12 +436,17 @@ def draw_title_page(c: Canvas, page_num: int, title: str, subtitle: str, pen_nam
 
 def draw_half_title(c: Canvas, page_num: int, title: str) -> None:
     cx = PAGE_W / 2
-    c.setFont(FONT_SERIF_BOLD, 22)
     c.setFillColor(INK)
-    lines = _wrap(title, FONT_SERIF_BOLD, 22, PAGE_W - 1.5 * INCH)
-    y = PAGE_H * 0.58
+    c.setFont(FONT_SERIF_BOLD, 24)
+    lines = _wrap(title, FONT_SERIF_BOLD, 24, PAGE_W - 1.5 * INCH)
+    total_h = len(lines) * 28
+    y = PAGE_H / 2 + total_h / 2  # true vertical center
     for i, line in enumerate(lines):
-        c.drawCentredString(cx, y - i * 26, line)
+        c.drawCentredString(cx, y - i * 28, line)
+    # small accent below
+    c.setStrokeColor(ACCENT)
+    c.setLineWidth(0.9)
+    c.line(cx - 18, y - total_h - 6, cx + 18, y - total_h - 6)
 
 
 def draw_copyright_page(c: Canvas, page_num: int, cfg: BookConfig, year: int) -> None:
@@ -363,12 +480,13 @@ def draw_copyright_page(c: Canvas, page_num: int, cfg: BookConfig, year: int) ->
 
 def draw_dedication_page(c: Canvas, page_num: int, dedication: str) -> None:
     cx = PAGE_W / 2
-    c.setFont(FONT_SERIF_ITALIC, 13)
+    c.setFont(FONT_SERIF_ITALIC, 14)
     c.setFillColor(INK)
-    lines = _wrap(dedication, FONT_SERIF_ITALIC, 13, PAGE_W - 2 * INCH)
-    y = PAGE_H * 0.55
+    lines = _wrap(dedication, FONT_SERIF_ITALIC, 14, PAGE_W - 2 * INCH)
+    total_h = len(lines) * 20
+    y = PAGE_H / 2 + total_h / 2  # true vertical center
     for i, line in enumerate(lines):
-        c.drawCentredString(cx, y - i * 18, line)
+        c.drawCentredString(cx, y - i * 20, line)
 
 
 def draw_body_page(
@@ -538,8 +656,11 @@ def build_book(cfg: BookConfig, out_dir: Path, year: int = 2026) -> Path:
     page = show(page)                            # 12
     draw_blank_page(c, page); page = show(page)  # 13
 
-    for title, intro in _grounding_exercises():
-        draw_exercise_page(c, page, title, intro, running_head, with_lines=False)
+    for ex_title, ex_intro, ex_steps in _grounding_exercises():
+        draw_exercise_page(
+            c, page, ex_title, ex_intro, running_head,
+            steps=ex_steps, try_it_prompt="What did you notice?", with_lines=True,
+        )
         page = show(page)
         draw_notes_page(c, page, running_head)
         page = show(page)
@@ -552,8 +673,8 @@ def build_book(cfg: BookConfig, out_dir: Path, year: int = 2026) -> Path:
 
     prompts = list(cfg.prompts) if cfg.prompts else _default_prompts()
     prompts = (prompts * ((30 // max(len(prompts), 1)) + 1))[:30]
-    for prompt in prompts:
-        draw_prompt_page(c, page, prompt, running_head)
+    for i, prompt in enumerate(prompts, start=1):
+        draw_prompt_page(c, page, prompt, running_head, prompt_number=i)
         page = show(page)
     # page is now 55
 
@@ -565,7 +686,10 @@ def build_book(cfg: BookConfig, out_dir: Path, year: int = 2026) -> Path:
     trackers = _tracker_specs(cfg)
     trackers = (trackers * ((14 // max(len(trackers), 1)) + 1))[:14]
     for spec in trackers:
-        draw_tracker_page(c, page, spec["title"], running_head, DAYS, spec["columns"])
+        draw_tracker_page(
+            c, page, spec["title"], running_head, DAYS, spec["columns"],
+            subtitle=spec.get("subtitle", ""),
+        )
         page = show(page)
     # page is now 71
 
@@ -661,22 +785,44 @@ def build_book(cfg: BookConfig, out_dir: Path, year: int = 2026) -> Path:
 
 def _default_how_to_use() -> list[str]:
     return [
-        "This is your journal. Use it in whatever order helps. Skip pages. Come back to "
-        "pages. Nothing here is a test.",
+        "This is your journal. Nothing in it is a test, and there is no wrong "
+        "way to use it. Some pages will hit exactly right on a hard day. Others "
+        "will feel like nothing. That is normal. Move on.",
         "",
-        "There are five sections. Grounding tools you can use in the moment. Prompts to "
-        "help you get thoughts out of your head and onto paper. Trackers to spot patterns. "
-        "A toolkit of small practices. And eight weeks of short reflections.",
+        "There are five sections inside. Grounding tools you can use in the "
+        "moment, when your body is in the middle of it. Prompts to help you get "
+        "the loud thoughts out of your head and onto paper, where they get a "
+        "little smaller. Trackers to help you notice patterns — what triggers "
+        "your anxiety, what actually helps, how sleep and mood connect. A "
+        "toolkit of small practices for the hard days. And eight weeks of "
+        "short reflections at the end.",
         "",
-        "Try one prompt when your mind is loud. Try one tracker for a week. If a page "
-        "feels wrong for you today, turn to another one. Progress is not linear, and "
-        "neither is this book.",
+        "You do not have to go in order. If a prompt feels wrong today, turn "
+        "to another one. If a tracker doesn't fit your week, skip it. Progress "
+        "is not linear, and neither is this book.",
         "",
-        "There are no wrong answers here. Write in pencil, pen, whatever. Scribble. "
-        "Draw. Leave pages blank. This journal will not grade you.",
+        "A few small suggestions:",
         "",
-        "If your anxiety is getting in the way of your daily life, please also talk to a "
-        "trusted adult or a mental-health professional. Resources are on the last page.",
+        "• If your mind is loud, start with a grounding tool from Section One. "
+        "Sometimes your body has to steady before your thoughts will.",
+        "",
+        "• Try one prompt a day for a week, then look back. You'll see patterns "
+        "you couldn't see in the moment.",
+        "",
+        "• Try one tracker for a full week before deciding whether it helps. "
+        "Patterns take time to show up on the page.",
+        "",
+        "• Write in pencil, pen, marker, whatever. Scribble. Doodle in the "
+        "margins. Leave a page half-empty. This journal will not grade you.",
+        "",
+        "• If you fill a page and want more room, use one of the notes pages "
+        "at the back. They're there on purpose.",
+        "",
+        "One important thing: this journal is for reflection, not treatment. "
+        "If your anxiety is getting in the way of school, sleep, eating, "
+        "friendships, or feeling safe — please also talk to a trusted adult, "
+        "a school counselor, or a mental-health professional. There are "
+        "resources at the back of the book. You do not have to do this alone.",
     ]
 
 
@@ -692,28 +838,75 @@ def _contents_list() -> list[str]:
     ]
 
 
-def _grounding_exercises() -> list[tuple[str, str]]:
+def _grounding_exercises() -> list[tuple[str, str, list[str]]]:
+    """(title, intro paragraph, numbered steps)."""
     return [
-        ("5-4-3-2-1",
-         "Look around. Name five things you can see. Four things you can touch. Three "
-         "things you can hear. Two things you can smell. One thing you can taste. Go slow. "
-         "Your senses pull you back into your body."),
-        ("Box breathing",
-         "Breathe in for four counts. Hold for four. Breathe out for four. Hold for four. "
-         "Repeat four times. Draw a square in the air with your finger as you breathe, "
-         "one side per count."),
-        ("Body scan",
-         "Start at the top of your head. Slowly move your attention down: forehead, jaw, "
-         "shoulders, chest, belly, arms, hands, legs, feet. Notice what's tight. Let it "
-         "soften if it wants to. If it doesn't, that's fine."),
-        ("Cold water reset",
-         "Splash cold water on your face, or hold an ice cube for a few seconds, or run "
-         "your wrists under cold water for thirty seconds. The temperature shift interrupts "
-         "the anxiety loop and signals your nervous system to slow down."),
-        ("Name it to tame it",
-         "Say out loud, or write down, exactly what you're feeling. “I feel anxious "
-         "because...” Being specific about the emotion — not just ‘bad’ "
-         "— shrinks it a little. Try to name three feelings if you can."),
+        (
+            "5-4-3-2-1",
+            "A classic sensory grounding exercise. When your thoughts are racing "
+            "faster than you can catch them, your senses can pull you back into "
+            "your body. Take your time with each step. There is no rush.",
+            [
+                "Name five things you can SEE. Say them out loud or in your head.",
+                "Name four things you can TOUCH. Actually touch them if you can.",
+                "Name three things you can HEAR. Distant sounds count too.",
+                "Name two things you can SMELL. Or two smells you like.",
+                "Name one thing you can TASTE. Or one taste you'd like right now.",
+            ],
+        ),
+        (
+            "Box breathing",
+            "A simple breath pattern used by athletes, first responders, and "
+            "anyone who needs to steady a racing nervous system. Four counts "
+            "in, four hold, four out, four hold. Draw a square in the air with "
+            "your finger as you go — one side per count.",
+            [
+                "Breathe in slowly through your nose for four counts.",
+                "Hold your breath gently for four counts.",
+                "Breathe out slowly through your mouth for four counts.",
+                "Hold empty for four counts. That's one full cycle.",
+                "Repeat four times. Notice how your body feels different at the end.",
+            ],
+        ),
+        (
+            "Body scan",
+            "Anxiety lives in the body — tight jaw, clenched shoulders, shallow "
+            "breath. A slow scan helps you locate where you're holding it, so "
+            "you can start to let it go. There is no wrong way to do this.",
+            [
+                "Start at the top of your head. Notice how it feels.",
+                "Move down slowly: forehead, jaw, neck, shoulders.",
+                "Continue down: chest, belly, arms, hands, hips.",
+                "Keep going: legs, knees, ankles, feet.",
+                "Where do you feel tight? Let it soften if it wants to. If it doesn't, that's okay too.",
+            ],
+        ),
+        (
+            "Cold water reset",
+            "A temperature shift is one of the fastest ways to interrupt an "
+            "anxiety spiral. Cold on the face triggers the mammalian dive reflex, "
+            "which slows your heart rate on purpose. Sounds strange. Works fast.",
+            [
+                "Go to a sink, or grab an ice cube or a cold drink.",
+                "Splash cold water on your face for 30 seconds — especially your forehead and cheeks.",
+                "Or: hold an ice cube in your palm until it starts to melt.",
+                "Or: run cold water over your wrists for 30 seconds.",
+                "Breathe slowly while you do it. Notice the shift.",
+            ],
+        ),
+        (
+            "Name it to tame it",
+            "Vague, big feelings feel unmanageable. Specific, named feelings "
+            "feel smaller. Being precise about your emotion shrinks it a little "
+            "and gives you something to actually work with.",
+            [
+                "Pause. Ask: what am I actually feeling right now?",
+                "Skip 'bad.' Try more specific words: anxious, angry, disappointed, embarrassed, lonely.",
+                "Say it out loud or write it down: 'I feel ______ because ______.'",
+                "See if you can name a second feeling underneath the first one.",
+                "Notice — did naming it change the size of it at all?",
+            ],
+        ),
     ]
 
 
@@ -797,11 +990,39 @@ def _default_affirmations() -> list[str]:
 def _tracker_specs(cfg: BookConfig) -> list[dict]:
     focus = cfg.tracker_focus or "worry"
     return [
-        {"title": "Anxiety level this week", "columns": ["Level 1-10", "What triggered it", "What helped"]},
-        {"title": "Sleep tracker", "columns": ["Hours", "How I slept", "How I felt"]},
-        {"title": "Mood check-in", "columns": ["Morning", "Afternoon", "Night"]},
-        {"title": f"{focus.title()} log", "columns": ["Where / when", "Body feeling", "What I did next"]},
-        {"title": "Energy this week", "columns": ["Level 1-10", "What drained me", "What refilled me"]},
-        {"title": "One small win", "columns": ["Win of the day", "Who saw it", "How it felt"]},
-        {"title": "Kindness to self", "columns": ["What I did", "How it felt", "Do again?"]},
+        {
+            "title": "Anxiety level this week",
+            "subtitle": "Rate your baseline anxiety each day. Note what set it off and what helped.",
+            "columns": ["Level 1-10", "What triggered it", "What helped"],
+        },
+        {
+            "title": "Sleep tracker",
+            "subtitle": "How many hours, how well, and how you felt the next day. Patterns show up fast.",
+            "columns": ["Hours slept", "Quality 1-10", "How I felt"],
+        },
+        {
+            "title": "Mood check-in",
+            "subtitle": "Three quick check-ins each day. One word each is enough.",
+            "columns": ["Morning", "Afternoon", "Night"],
+        },
+        {
+            "title": f"{focus.title()} log",
+            "subtitle": "Notice when it shows up. What was happening? What did you do next?",
+            "columns": ["When and where", "Body feeling", "What I did next"],
+        },
+        {
+            "title": "Energy this week",
+            "subtitle": "What drained you. What refilled you. Both matter.",
+            "columns": ["Level 1-10", "What drained me", "What refilled me"],
+        },
+        {
+            "title": "One small win",
+            "subtitle": "Every day, name one small thing. Toast that wasn't burnt counts.",
+            "columns": ["Win of the day", "Who noticed", "How it felt"],
+        },
+        {
+            "title": "Kindness to self",
+            "subtitle": "One kind thing you did for yourself each day. Rest counts. Naps count.",
+            "columns": ["What I did", "How it felt", "Do again?"],
+        },
     ]
