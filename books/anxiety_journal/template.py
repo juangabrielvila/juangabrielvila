@@ -1,8 +1,13 @@
 """Shared interior template for the North Star Journals anxiety-journal line.
 
-6x9 in trim, mirrored 0.75 in gutter, no bleed. 108 pages, KDP-ready.
-Fonts embedded (Liberation Serif/Sans — SIL/GPL-with-font-exception, safe for
-commercial embedding). All layout drawn on a raw canvas for tight control.
+6x9 in trim, mirrored 0.75 in gutter, no bleed. 108 pages, KDP-ready. Taste
+targets the design language of Atomic Habits / The Subtle Art / Don't Believe
+Everything You Think: black-only ink on warm serif body (EB Garamond 12), sans
+kickers, simplified chapter openers (kicker + numeral + title), drop caps on
+prose openings, full-justified body. See design-taste.md for the full brief.
+
+Fonts embedded from local TTFs — EB Garamond is SIL Open Font License, Liberation
+Sans is GPL with font exception; both are commercial-safe.
 """
 
 from __future__ import annotations
@@ -10,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from reportlab.lib.colors import Color, HexColor
+from reportlab.lib.colors import HexColor
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
@@ -24,10 +29,11 @@ OUTSIDE = 0.5 * INCH
 TOP = 0.6 * INCH
 BOTTOM = 0.6 * INCH
 
-INK = HexColor("#1a1a1a")
+# Black-only interior — no accent color. Hierarchy comes from weight, size,
+# whitespace, and position. Mirrors the reference books' restraint.
+INK = HexColor("#000000")
 MUTED = HexColor("#6b6b6b")
 RULE = HexColor("#d6d6d6")
-ACCENT = HexColor("#2f5d63")
 
 FONT_SERIF = "BodySerif"
 FONT_SERIF_BOLD = "BodySerifBold"
@@ -35,10 +41,12 @@ FONT_SERIF_ITALIC = "BodySerifItalic"
 FONT_SANS = "Sans"
 FONT_SANS_BOLD = "SansBold"
 
+_FONTS_DIR = Path(__file__).parent / "fonts"
+
 _FONT_PATHS = {
-    FONT_SERIF: "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
-    FONT_SERIF_BOLD: "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
-    FONT_SERIF_ITALIC: "/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf",
+    FONT_SERIF: str(_FONTS_DIR / "EBGaramond12-Regular.ttf"),
+    FONT_SERIF_BOLD: str(_FONTS_DIR / "EBGaramond12-Bold.ttf"),
+    FONT_SERIF_ITALIC: str(_FONTS_DIR / "EBGaramond12-Italic.ttf"),
     FONT_SANS: "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     FONT_SANS_BOLD: "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
 }
@@ -92,29 +100,35 @@ def text_box(page_num: int) -> tuple[float, float, float, float]:
     return left, bottom, PAGE_W - left - right, PAGE_H - top - bottom
 
 
-def draw_page_number(c: Canvas, page_num: int) -> None:
-    """Bottom-outside page number, muted."""
+def draw_folio(c: Canvas, page_num: int, text: str) -> None:
+    """Book-style running head at the page top: `4  ·  TITLE` on verso,
+    `TITLE  ·  5` on recto. Small sans, letterspaced upper-case — same
+    treatment used by Atomic Habits and Subtle Art. Replaces both the italic
+    running head and the separate bottom page number.
+    """
     c.setFont(FONT_SANS, 8.5)
-    c.setFillColor(MUTED)
-    if is_recto(page_num):
-        x = PAGE_W - OUTSIDE
-        c.drawRightString(x, BOTTOM / 2, str(page_num))
-    else:
-        x = OUTSIDE
-        c.drawString(x, BOTTOM / 2, str(page_num))
-    c.setFillColor(INK)
-
-
-def draw_running_head(c: Canvas, page_num: int, text: str) -> None:
-    """Small italic running head, top-outside."""
-    c.setFont(FONT_SERIF_ITALIC, 8.5)
     c.setFillColor(MUTED)
     y = PAGE_H - TOP / 2
     if is_recto(page_num):
-        c.drawRightString(PAGE_W - OUTSIDE, y, text)
+        line = f"{text.upper()}   ·   {page_num}"
+        c.drawRightString(PAGE_W - OUTSIDE, y, line)
     else:
-        c.drawString(OUTSIDE, y, text)
+        line = f"{page_num}   ·   {text.upper()}"
+        c.drawString(OUTSIDE, y, line)
     c.setFillColor(INK)
+
+
+# --- backwards-compat wrappers so existing call-sites keep working during the
+#     rewrite. Both delegate to draw_folio; the callers that used to draw the
+#     bottom page number become no-ops.
+
+def draw_running_head(c: Canvas, page_num: int, text: str) -> None:
+    draw_folio(c, page_num, text)
+
+
+def draw_page_number(c: Canvas, page_num: int) -> None:  # noqa: ARG001
+    """No-op: folio now carries the page number in the top-of-page running head."""
+    return
 
 
 def _fill_rules(c: Canvas, x: float, top_y: float, bottom_limit: float, w: float, rule_gap: float = 22.0) -> None:
@@ -128,37 +142,32 @@ def _fill_rules(c: Canvas, x: float, top_y: float, bottom_limit: float, w: float
 
 
 def draw_prompt_page(c: Canvas, page_num: int, prompt: str, running_head: str, prompt_number: int | None = None) -> None:
-    """Journal prompt near top with breathing room, ruled lines fill to bottom."""
+    """Journal prompt: small sans-caps 'NO. XX' at the top, italic serif prompt
+    below, ruled lines filling the rest. No accent color; no visible divider.
+    """
     x, y, w, h = text_box(page_num)
-    draw_running_head(c, page_num, running_head)
+    draw_folio(c, page_num, running_head)
 
     # prompt-number tag
-    top_y = y + h - 18
+    top_y = y + h - 6
     if prompt_number is not None:
         c.setFillColor(MUTED)
         c.setFont(FONT_SANS_BOLD, 9)
         c.drawString(x, top_y, f"NO. {prompt_number:02d}")
-        top_y -= 14
+        top_y -= 20
 
     # prompt block
     c.setFillColor(INK)
-    c.setFont(FONT_SERIF_ITALIC, 13.5)
-    prompt_lines = _wrap(prompt, FONT_SERIF_ITALIC, 13.5, w)
-    line_h = 18
+    c.setFont(FONT_SERIF_ITALIC, 14)
+    prompt_lines = _wrap(prompt, FONT_SERIF_ITALIC, 14, w)
+    line_h = 19
     for i, line in enumerate(prompt_lines):
         c.drawString(x, top_y - i * line_h, line)
-    prompt_bottom = top_y - len(prompt_lines) * line_h - 12
+    prompt_bottom = top_y - len(prompt_lines) * line_h - 14
 
-    # thin divider
-    c.setStrokeColor(ACCENT)
-    c.setLineWidth(0.6)
-    c.line(x, prompt_bottom, x + 32, prompt_bottom)
-
-    # ruled lines fill remaining space
-    first_rule = prompt_bottom - 24
-    _fill_rules(c, x, first_rule, y + 6, w, rule_gap=22)
-
-    draw_page_number(c, page_num)
+    # ruled lines fill remaining space (no divider — the whitespace itself
+    # separates the prompt from the writing area)
+    _fill_rules(c, x, prompt_bottom, y + 6, w, rule_gap=22)
 
 
 def draw_blank_page(c: Canvas, page_num: int) -> None:
@@ -169,54 +178,37 @@ def draw_blank_page(c: Canvas, page_num: int) -> None:
 
 def draw_section_title(
     c: Canvas,
-    page_num: int,
+    page_num: int,  # noqa: ARG001 — signature preserved for the build loop
     kicker: str,
     heading: str,
-    subhead: str = "",
+    subhead: str = "",  # noqa: ARG001 — deliberately unused; refs use no subhead
 ) -> None:
-    """Full-page section opener. Oversized numeral watermark for visual weight,
-    kicker + heading + subhead grouped at the optical center, decorative bottom
-    rule for balance.
+    """Full-page section opener. Three centered elements only:
+    tiny sans kicker → giant serif numeral → title. No subhead, no accent,
+    no watermark. Mirrors Atomic Habits / Subtle Art chapter-opener treatment.
+    Vertically balanced around the optical center (~55% down).
     """
     cx = PAGE_W / 2
-
-    # oversized muted numeral watermark, tucked in the lower third for balance
-    numeral = _kicker_to_numeral(kicker)
-    if numeral:
-        c.setFillColor(HexColor("#e8ecee"))
-        # scale by numeral width so 'I' isn't tiny and 'VIII' isn't overflowing
-        size = 160 if len(numeral) >= 3 else 200 if len(numeral) == 2 else 180
-        c.setFont(FONT_SERIF_BOLD, size)
-        c.drawCentredString(cx, PAGE_H * 0.20, numeral)
+    numeral = _kicker_to_numeral(kicker) or "·"
 
     # kicker
     c.setFillColor(MUTED)
-    c.setFont(FONT_SANS_BOLD, 10)
-    c.drawCentredString(cx, PAGE_H * 0.66, kicker.upper())
+    c.setFont(FONT_SANS_BOLD, 9.5)
+    c.drawCentredString(cx, PAGE_H * 0.68, kicker.upper())
 
-    # accent rule
-    c.setStrokeColor(ACCENT)
-    c.setLineWidth(1.0)
-    c.line(cx - 24, PAGE_H * 0.64, cx + 24, PAGE_H * 0.64)
-
-    # heading
+    # numeral
     c.setFillColor(INK)
-    c.setFont(FONT_SERIF_BOLD, 34)
-    heading_lines = _wrap(heading, FONT_SERIF_BOLD, 34, PAGE_W - 1.6 * INCH)
-    y = PAGE_H * 0.58
+    numeral_size = 128 if len(numeral) <= 2 else 108
+    c.setFont(FONT_SERIF_BOLD, numeral_size)
+    c.drawCentredString(cx, PAGE_H * 0.48, numeral)
+
+    # title
+    c.setFillColor(INK)
+    c.setFont(FONT_SERIF_BOLD, 28)
+    heading_lines = _wrap(heading, FONT_SERIF_BOLD, 28, PAGE_W - 1.6 * INCH)
+    ty = PAGE_H * 0.36
     for i, line in enumerate(heading_lines):
-        c.drawCentredString(cx, y - i * 38, line)
-
-    # subhead
-    if subhead:
-        c.setFont(FONT_SERIF_ITALIC, 13)
-        c.setFillColor(MUTED)
-        sub_lines = _wrap(subhead, FONT_SERIF_ITALIC, 13, PAGE_W - 2 * INCH)
-        sy = y - len(heading_lines) * 38 - 20
-        for i, line in enumerate(sub_lines):
-            c.drawCentredString(cx, sy - i * 17, line)
-
-    # no explicit bottom rule — numeral watermark carries the lower half
+        c.drawCentredString(cx, ty - i * 32, line)
 
 
 _ROMAN = {"one": "I", "two": "II", "three": "III", "four": "IV", "five": "V",
@@ -241,75 +233,77 @@ def draw_exercise_page(
     steps: list[str] | None = None,
     try_it_prompt: str = "Try it now.",
     with_lines: bool = True,
+    kicker: str = "PRACTICE",
+    drop_cap: bool = True,
 ) -> None:
-    """Named exercise page. Header + intro paragraph + optional numbered steps +
-    a "try it now" divider, then ruled lines that fill to the bottom margin.
-
-    When `steps` is passed, they render as numbered lines under the intro. When
-    with_lines is True, ruled lines fill the remainder of the page for practice.
+    """Named exercise page. Small-caps kicker → serif bold title → justified
+    intro (with drop cap by default) → optional numbered steps → subtle
+    hairline divider with a sans-caps label → ruled reflection lines.
+    Drop cap is auto-suppressed when the intro is too short to wrap around it.
     """
     x, y, w, h = text_box(page_num)
-    draw_running_head(c, page_num, running_head)
+    draw_folio(c, page_num, running_head)
 
-    # kicker + title
+    # kicker
     c.setFillColor(MUTED)
-    c.setFont(FONT_SANS_BOLD, 8.5)
-    c.drawString(x, y + h - 8, "PRACTICE")
+    c.setFont(FONT_SANS_BOLD, 9)
+    c.drawString(x, y + h - 4, kicker.upper())
 
+    # title
     c.setFillColor(INK)
     c.setFont(FONT_SERIF_BOLD, 22)
     title_lines = _wrap(title, FONT_SERIF_BOLD, 22, w)
-    title_top = y + h - 32
+    title_top = y + h - 26
     for i, line in enumerate(title_lines):
         c.drawString(x, title_top - i * 24, line)
-    y_cursor = title_top - len(title_lines) * 24 - 6
+    y_cursor = title_top - len(title_lines) * 24 - 12
 
-    # accent rule under title
-    c.setStrokeColor(ACCENT)
-    c.setLineWidth(0.9)
-    c.line(x, y_cursor, x + 36, y_cursor)
-    y_cursor -= 18
+    # Auto-suppress drop cap when the intro would be shorter than the cap
+    # height (avoids the drop letter hanging into ruled area).
+    use_drop_cap = drop_cap
+    if use_drop_cap:
+        est_lines = max(1, len(_wrap(intro, FONT_SERIF, 11.0, w - 22)))
+        if est_lines < 3:
+            use_drop_cap = False
 
-    # intro paragraph
-    c.setFillColor(INK)
-    c.setFont(FONT_SERIF, 11.5)
-    intro_lines = _wrap(intro, FONT_SERIF, 11.5, w)
-    line_h = 16
-    for line in intro_lines:
-        c.drawString(x, y_cursor, line)
-        y_cursor -= line_h
-    y_cursor -= 6
+    # intro paragraph — justified
+    y_cursor = draw_justified_paragraphs(
+        c, x, y_cursor, w, y + 6, [intro],
+        font=FONT_SERIF, size=11.0, leading=15.0, para_gap=6.0,
+        first_line_indent=0.0,
+        drop_cap_first=use_drop_cap, drop_cap_lines=3,
+    )
+    y_cursor -= 2
 
-    # optional numbered steps
+    # numbered steps
     if steps:
-        c.setFont(FONT_SERIF, 11)
         step_line_h = 15
         for i, step in enumerate(steps, start=1):
+            if y_cursor < y + 6:
+                break
+            c.setFont(FONT_SERIF_BOLD, 10.5)
+            c.setFillColor(INK)
             label = f"{i}."
-            c.setFont(FONT_SANS_BOLD, 10)
-            c.setFillColor(ACCENT)
+            label_w = pdfmetrics.stringWidth(label, FONT_SERIF_BOLD, 10.5)
             c.drawString(x, y_cursor, label)
             c.setFont(FONT_SERIF, 11)
-            c.setFillColor(INK)
-            wrapped = _wrap(step, FONT_SERIF, 11, w - 22)
+            wrapped = _wrap(step, FONT_SERIF, 11, w - (label_w + 6))
             for j, wline in enumerate(wrapped):
-                c.drawString(x + 22, y_cursor - j * step_line_h, wline)
-            y_cursor -= len(wrapped) * step_line_h + 6
+                c.drawString(x + label_w + 6, y_cursor - j * step_line_h, wline)
+            y_cursor -= len(wrapped) * step_line_h + 4
         y_cursor -= 4
 
     if with_lines:
-        # "Try it now." divider
-        c.setStrokeColor(RULE)
-        c.setLineWidth(0.4)
-        c.line(x, y_cursor, x + w, y_cursor)
+        # quiet hairline divider + sans-caps label
+        c.setStrokeColor(MUTED)
+        c.setLineWidth(0.5)
+        c.line(x, y_cursor, x + 18, y_cursor)
         c.setFont(FONT_SANS_BOLD, 8.5)
         c.setFillColor(MUTED)
-        c.drawString(x, y_cursor - 12, try_it_prompt.upper())
-        y_cursor -= 26
+        c.drawString(x + 24, y_cursor - 3, try_it_prompt.upper())
+        y_cursor -= 22
 
         _fill_rules(c, x, y_cursor, y + 6, w, rule_gap=22)
-
-    draw_page_number(c, page_num)
 
 
 def draw_tracker_page(
@@ -328,22 +322,19 @@ def draw_tracker_page(
     never collide.
     """
     x, y, w, h = text_box(page_num)
-    draw_running_head(c, page_num, running_head)
+    draw_folio(c, page_num, running_head)
 
-    # kicker + title
+    # kicker
     c.setFillColor(MUTED)
-    c.setFont(FONT_SANS_BOLD, 8.5)
-    c.drawString(x, y + h - 8, "TRACKER")
+    c.setFont(FONT_SANS_BOLD, 9)
+    c.drawString(x, y + h - 4, "TRACKER")
 
+    # title
     c.setFillColor(INK)
     c.setFont(FONT_SERIF_BOLD, 20)
-    c.drawString(x, y + h - 32, title)
+    c.drawString(x, y + h - 28, title)
 
-    c.setStrokeColor(ACCENT)
-    c.setLineWidth(0.9)
-    c.line(x, y + h - 38, x + 36, y + h - 38)
-
-    y_cursor = y + h - 60
+    y_cursor = y + h - 52
     if subtitle:
         c.setFont(FONT_SERIF_ITALIC, 10.5)
         c.setFillColor(MUTED)
@@ -403,57 +394,54 @@ def draw_tracker_page(
         cell_center_y = cell_top - row_h / 2 - 3
         c.drawString(x + 8, cell_center_y, day)
 
-    draw_page_number(c, page_num)
 
-
-def draw_title_page(c: Canvas, page_num: int, title: str, subtitle: str, pen_name: str) -> None:
-    """Full title page — centered, no page number."""
+def draw_title_page(c: Canvas, page_num: int, title: str, subtitle: str, pen_name: str) -> None:  # noqa: ARG001
+    """Full title page — centered, no folio. Serif title, hairline gray rule,
+    italic subtitle, imprint in tiny sans caps at the foot.
+    """
     cx = PAGE_W / 2
 
     c.setFillColor(INK)
     c.setFont(FONT_SERIF_BOLD, 30)
     title_lines = _wrap(title, FONT_SERIF_BOLD, 30, PAGE_W - 1.5 * INCH)
-    y = PAGE_H * 0.62
+    y = PAGE_H * 0.60
     for i, line in enumerate(title_lines):
         c.drawCentredString(cx, y - i * 34, line)
 
-    y2 = y - len(title_lines) * 34 - 20
+    y2 = y - len(title_lines) * 34 - 22
 
-    c.setStrokeColor(ACCENT)
-    c.setLineWidth(0.8)
-    c.line(cx - 30, y2, cx + 30, y2)
+    c.setStrokeColor(MUTED)
+    c.setLineWidth(0.6)
+    c.line(cx - 26, y2, cx + 26, y2)
 
-    c.setFont(FONT_SERIF_ITALIC, 13.5)
+    c.setFont(FONT_SERIF_ITALIC, 13)
     c.setFillColor(MUTED)
-    sub_lines = _wrap(subtitle, FONT_SERIF_ITALIC, 13.5, PAGE_W - 2 * INCH)
+    sub_lines = _wrap(subtitle, FONT_SERIF_ITALIC, 13, PAGE_W - 2 * INCH)
     for i, line in enumerate(sub_lines):
-        c.drawCentredString(cx, y2 - 22 - i * 18, line)
+        c.drawCentredString(cx, y2 - 22 - i * 17, line)
 
-    c.setFont(FONT_SANS_BOLD, 10)
-    c.setFillColor(INK)
-    c.drawCentredString(cx, BOTTOM + 30, pen_name.upper())
+    c.setFont(FONT_SANS_BOLD, 9)
+    c.setFillColor(MUTED)
+    c.drawCentredString(cx, BOTTOM + 28, pen_name.upper())
 
 
-def draw_half_title(c: Canvas, page_num: int, title: str) -> None:
+def draw_half_title(c: Canvas, page_num: int, title: str) -> None:  # noqa: ARG001
+    """Half-title — title alone, vertically centered. No rule, no folio."""
     cx = PAGE_W / 2
     c.setFillColor(INK)
-    c.setFont(FONT_SERIF_BOLD, 24)
-    lines = _wrap(title, FONT_SERIF_BOLD, 24, PAGE_W - 1.5 * INCH)
-    total_h = len(lines) * 28
-    y = PAGE_H / 2 + total_h / 2  # true vertical center
+    c.setFont(FONT_SERIF_BOLD, 22)
+    lines = _wrap(title, FONT_SERIF_BOLD, 22, PAGE_W - 1.5 * INCH)
+    total_h = len(lines) * 26
+    y = PAGE_H / 2 + total_h / 2
     for i, line in enumerate(lines):
-        c.drawCentredString(cx, y - i * 28, line)
-    # small accent below
-    c.setStrokeColor(ACCENT)
-    c.setLineWidth(0.9)
-    c.line(cx - 18, y - total_h - 6, cx + 18, y - total_h - 6)
+        c.drawCentredString(cx, y - i * 26, line)
 
 
-def draw_copyright_page(c: Canvas, page_num: int, cfg: BookConfig, year: int) -> None:
-    """Copyright + safety disclaimer + brief resource note."""
+def draw_copyright_page(c: Canvas, page_num: int, cfg: BookConfig, year: int) -> None:  # noqa: ARG001
+    """Copyright + safety disclaimer + brief resource note. Serif, small, no folio."""
     x, y, w, h = text_box(page_num)
     c.setFillColor(INK)
-    c.setFont(FONT_SANS, 9)
+    c.setFont(FONT_SERIF, 9)
 
     lines = [
         f"Copyright © {year} {cfg.pen_name}. All rights reserved.",
@@ -472,7 +460,7 @@ def draw_copyright_page(c: Canvas, page_num: int, cfg: BookConfig, year: int) ->
         f"First edition, {year}.",
         f"Published by {cfg.pen_name}.",
     ]
-    line_h = 12
+    line_h = 12.5
     top = y + h - 20
     for i, line in enumerate(lines):
         c.drawString(x, top - i * line_h, line)
@@ -495,59 +483,44 @@ def draw_body_page(
     heading: str,
     body: list[str],
     running_head: str,
+    drop_cap: bool = True,
 ) -> None:
-    """Prose page — heading + wrapped paragraphs, no ruled lines."""
+    """Prose page — small-caps heading (no rule), full-justified body in EB
+    Garamond, drop cap on the first paragraph by default. Matches the reference
+    books' prose treatment.
+    """
     x, y, w, h = text_box(page_num)
-    draw_running_head(c, page_num, running_head)
+    draw_folio(c, page_num, running_head)
 
     c.setFillColor(INK)
     if heading:
-        c.setFont(FONT_SANS_BOLD, 12)
+        c.setFont(FONT_SANS_BOLD, 10.5)
+        c.setFillColor(MUTED)
         c.drawString(x, y + h - 4, heading.upper())
-        c.setStrokeColor(ACCENT)
-        c.setLineWidth(0.8)
-        c.line(x, y + h - 12, x + 28, y + h - 12)
-        top = y + h - 34
+        c.setFillColor(INK)
+        top = y + h - 28
     else:
-        top = y + h - 4
+        top = y + h - 6
 
-    c.setFont(FONT_SERIF, 11)
-    line_h = 15
-    yy = top
-    for para in body:
-        lines = _wrap(para, FONT_SERIF, 11, w)
-        for line in lines:
-            if yy < y + 4:
-                break
-            c.drawString(x, yy, line)
-            yy -= line_h
-        yy -= 8  # paragraph break
-
-    draw_page_number(c, page_num)
+    draw_justified_paragraphs(
+        c, x, top, w, y + 6, body,
+        font=FONT_SERIF, size=11.0, leading=15.0, para_gap=6.0,
+        first_line_indent=10.0,
+        drop_cap_first=bool(heading) and drop_cap,
+        drop_cap_lines=3,
+    )
 
 
 def draw_notes_page(c: Canvas, page_num: int, running_head: str) -> None:
-    """Ruled page, no prompt."""
+    """Ruled page, no prompt. Tiny sans-caps 'NOTES' label at top; no rule."""
     x, y, w, h = text_box(page_num)
-    draw_running_head(c, page_num, running_head)
+    draw_folio(c, page_num, running_head)
 
     c.setFillColor(MUTED)
     c.setFont(FONT_SANS_BOLD, 9)
     c.drawString(x, y + h - 4, "NOTES")
 
-    c.setStrokeColor(ACCENT)
-    c.setLineWidth(0.8)
-    c.line(x, y + h - 12, x + 20, y + h - 12)
-
-    rule_gap = 22
-    yy = y + h - 30
-    while yy > y + 4:
-        c.setStrokeColor(RULE)
-        c.setLineWidth(0.4)
-        c.line(x, yy, x + w, yy)
-        yy -= rule_gap
-
-    draw_page_number(c, page_num)
+    _fill_rules(c, x, y + h - 26, y + 6, w, rule_gap=22)
 
 
 def _wrap(text: str, font: str, size: float, max_w: float) -> list[str]:
@@ -568,6 +541,150 @@ def _wrap(text: str, font: str, size: float, max_w: float) -> list[str]:
     if line:
         lines.append(line)
     return lines
+
+
+def _wrap_words(text: str, font: str, size: float, max_w: float) -> list[list[str]]:
+    """Word-wrap keeping the tokens so we can justify each line individually."""
+    if not text:
+        return [[""]]
+    words = text.split()
+    lines: list[list[str]] = []
+    cur: list[str] = []
+    for word in words:
+        candidate = " ".join(cur + [word])
+        if pdfmetrics.stringWidth(candidate, font, size) <= max_w:
+            cur.append(word)
+        else:
+            if cur:
+                lines.append(cur)
+            cur = [word]
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def _draw_justified_line(
+    c: Canvas,
+    words: list[str],
+    x: float,
+    y: float,
+    font: str,
+    size: float,
+    max_w: float,
+    is_last: bool,
+) -> None:
+    """Draw a line of words, adjusting inter-word gap to fill max_w. Last line
+    of a paragraph is left-aligned (natural spacing)."""
+    if not words:
+        return
+    if is_last or len(words) == 1:
+        c.setFont(font, size)
+        c.drawString(x, y, " ".join(words))
+        return
+    total_word_w = sum(pdfmetrics.stringWidth(w, font, size) for w in words)
+    slack = max_w - total_word_w
+    gap = slack / (len(words) - 1)
+    c.setFont(font, size)
+    cx = x
+    for i, w in enumerate(words):
+        c.drawString(cx, y, w)
+        cx += pdfmetrics.stringWidth(w, font, size) + gap
+
+
+def draw_justified_paragraphs(
+    c: Canvas,
+    x: float,
+    y_top: float,
+    w: float,
+    y_bottom_limit: float,
+    paragraphs: list[str],
+    font: str = FONT_SERIF,
+    size: float = 11.0,
+    leading: float = 15.0,
+    para_gap: float = 6.0,
+    first_line_indent: float = 0.0,
+    drop_cap_first: bool = False,
+    drop_cap_lines: int = 3,
+) -> float:
+    """Render a list of paragraphs, full-justified, with optional drop cap on
+    the first paragraph. Returns the y-cursor at the end (for stacking below).
+    Stops if y falls below y_bottom_limit — remaining paragraphs are silently
+    dropped, matching how a real book would flow to the next page.
+    """
+    yy = y_top
+    for p_idx, para in enumerate(paragraphs):
+        if not para.strip():
+            yy -= leading  # blank line acts as vertical space
+            continue
+
+        indent = 0.0
+        text = para
+        drop_cap_char = ""
+        if p_idx == 0 and drop_cap_first and text:
+            drop_cap_char = text[0]
+            text = text[1:].lstrip()
+        elif first_line_indent and p_idx > 0:
+            indent = first_line_indent
+
+        # Drop cap geometry
+        dc_advance = 0.0
+        dc_line_count = 0
+        if drop_cap_char:
+            dc_size = leading * drop_cap_lines * 0.95
+            dc_font = FONT_SERIF_BOLD
+            dc_w = pdfmetrics.stringWidth(drop_cap_char, dc_font, dc_size)
+            dc_advance = dc_w + 4  # small right-hand gap after the drop cap
+            dc_line_count = drop_cap_lines
+            # Draw the drop cap sitting on its baseline; align top of cap with
+            # top of the first line.
+            baseline = yy - leading * (drop_cap_lines - 1) - 2
+            c.setFont(dc_font, dc_size)
+            c.setFillColor(INK)
+            c.drawString(x, baseline, drop_cap_char)
+
+        # Justify each line of the paragraph.
+        available_w_first = w - indent - (dc_advance if dc_line_count else 0)
+        available_w_rest_dc = w - dc_advance  # for lines still wrapping past the drop cap
+        available_w_full = w  # once we clear the drop cap
+
+        # Word-wrap in a two-pass style: first-drop-cap-lines use the narrower
+        # measure; lines beyond that use the full measure.
+        remaining = text
+        line_index = 0
+        while remaining:
+            if yy < y_bottom_limit:
+                return yy
+            if line_index == 0:
+                measure = available_w_first
+                x_start = x + indent + (dc_advance if dc_line_count else 0)
+            elif line_index < dc_line_count:
+                measure = available_w_rest_dc
+                x_start = x + dc_advance
+            else:
+                measure = available_w_full
+                x_start = x
+
+            # Greedy fill of the current measure.
+            words = remaining.split()
+            take = []
+            for i, wd in enumerate(words):
+                candidate = " ".join(take + [wd])
+                if pdfmetrics.stringWidth(candidate, font, size) <= measure:
+                    take.append(wd)
+                else:
+                    break
+            if not take:
+                take = [words[0]]  # avoid infinite loop on overlong word
+            rest_words = words[len(take):]
+            is_last_line = not rest_words
+            _draw_justified_line(c, take, x_start, yy, font, size, measure, is_last_line)
+            yy -= leading
+            line_index += 1
+            remaining = " ".join(rest_words)
+
+        yy -= para_gap
+
+    return yy
 
 
 # ---------- book assembly ----------
@@ -735,6 +852,8 @@ def build_book(cfg: BookConfig, out_dir: Path, year: int = 2026) -> Path:
             "What helped, even a little?",
             running_head,
             with_lines=True,
+            kicker="WEEKLY REFLECTION",
+            drop_cap=False,
         )
         page = show(page)
         # right page (recto): "Next week I'll try..."
@@ -745,6 +864,8 @@ def build_book(cfg: BookConfig, out_dir: Path, year: int = 2026) -> Path:
             "conversation. Small counts.",
             running_head,
             with_lines=True,
+            kicker="WEEKLY REFLECTION",
+            drop_cap=False,
         )
         page = show(page)
     # page is now 103
