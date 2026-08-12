@@ -131,6 +131,49 @@ def draw_page_number(c: Canvas, page_num: int) -> None:  # noqa: ARG001
     return
 
 
+def draw_star(c: Canvas, cx: float, cy: float, r: float = 3.0, color=None) -> None:
+    """Draw a filled four-point star (spark) centered on (cx, cy). r is the
+    outer radius; the star's concave-inner radius is r * 0.22, giving it a
+    sharp spark shape. Solid fill in INK unless color overridden.
+    """
+    if color is None:
+        color = INK
+    i = r * 0.22
+    path = c.beginPath()
+    path.moveTo(cx, cy + r)
+    path.lineTo(cx + i, cy + i)
+    path.lineTo(cx + r, cy)
+    path.lineTo(cx + i, cy - i)
+    path.lineTo(cx, cy - r)
+    path.lineTo(cx - i, cy - i)
+    path.lineTo(cx - r, cy)
+    path.lineTo(cx - i, cy + i)
+    path.close()
+    c.setFillColor(color)
+    c.drawPath(path, stroke=0, fill=1)
+    c.setFillColor(INK)
+
+
+def draw_star_cluster(c: Canvas, cx: float, cy: float, count: int = 3, spacing: float = 10.0, r: float = 3.0) -> None:
+    """Draw a horizontal row of `count` stars centered on (cx, cy)."""
+    total_w = spacing * (count - 1)
+    start_x = cx - total_w / 2
+    for i in range(count):
+        draw_star(c, start_x + i * spacing, cy, r)
+
+
+def draw_star_rule(c: Canvas, cx: float, cy: float, half_w: float = 40.0, r: float = 3.0) -> None:
+    """Two short hairline rules with a star between them, centered on (cx, cy).
+    Book convention for section breaks and dinkus dividers."""
+    c.setStrokeColor(MUTED)
+    c.setLineWidth(0.5)
+    gap = 8
+    star_r = r
+    c.line(cx - half_w, cy, cx - gap, cy)
+    c.line(cx + gap, cy, cx + half_w, cy)
+    draw_star(c, cx, cy, star_r)
+
+
 def _fill_rules(c: Canvas, x: float, top_y: float, bottom_limit: float, w: float, rule_gap: float = 22.0) -> None:
     """Draw ruled lines starting at top_y, moving down until bottom_limit."""
     c.setStrokeColor(RULE)
@@ -142,19 +185,23 @@ def _fill_rules(c: Canvas, x: float, top_y: float, bottom_limit: float, w: float
 
 
 def draw_prompt_page(c: Canvas, page_num: int, prompt: str, running_head: str, prompt_number: int | None = None) -> None:
-    """Journal prompt: small sans-caps 'NO. XX' at the top, italic serif prompt
-    below, ruled lines filling the rest. No accent color; no visible divider.
+    """Journal prompt: North Star mark + 'NO. XX' at the top, italic serif
+    prompt below, star-rule dinkus, then ruled lines filling the rest.
     """
     x, y, w, h = text_box(page_num)
     draw_folio(c, page_num, running_head)
 
-    # prompt-number tag
+    # prompt-number tag with star mark
     top_y = y + h - 6
     if prompt_number is not None:
         c.setFillColor(MUTED)
         c.setFont(FONT_SANS_BOLD, 9)
-        c.drawString(x, top_y, f"NO. {prompt_number:02d}")
-        top_y -= 20
+        label = f"NO. {prompt_number:02d}"
+        c.drawString(x, top_y, label)
+        # star mark to the right of the label
+        label_w = pdfmetrics.stringWidth(label, FONT_SANS_BOLD, 9)
+        draw_star(c, x + label_w + 10, top_y + 3, r=2.5, color=MUTED)
+        top_y -= 22
 
     # prompt block
     c.setFillColor(INK)
@@ -165,9 +212,12 @@ def draw_prompt_page(c: Canvas, page_num: int, prompt: str, running_head: str, p
         c.drawString(x, top_y - i * line_h, line)
     prompt_bottom = top_y - len(prompt_lines) * line_h - 14
 
-    # ruled lines fill remaining space (no divider — the whitespace itself
-    # separates the prompt from the writing area)
-    _fill_rules(c, x, prompt_bottom, y + 6, w, rule_gap=22)
+    # dinkus separator: hairline · star · hairline centered above the ruled area
+    dinkus_y = prompt_bottom - 4
+    draw_star_rule(c, x + w / 2, dinkus_y, half_w=32, r=2.5)
+
+    # ruled lines fill remaining space
+    _fill_rules(c, x, dinkus_y - 20, y + 6, w, rule_gap=22)
 
 
 def draw_blank_page(c: Canvas, page_num: int) -> None:
@@ -183,13 +233,16 @@ def draw_section_title(
     heading: str,
     subhead: str = "",  # noqa: ARG001 — deliberately unused; refs use no subhead
 ) -> None:
-    """Full-page section opener. Three centered elements only:
-    tiny sans kicker → giant serif numeral → title. No subhead, no accent,
-    no watermark. Mirrors Atomic Habits / Subtle Art chapter-opener treatment.
-    Vertically balanced around the optical center (~55% down).
+    """Full-page section opener. Five elements, vertically balanced:
+    star cluster → sans kicker → giant serif numeral → hairline star rule → title.
+    The star cluster and rule are the North Star Journals brand ornament,
+    filling the "just text" gap the earlier pass had.
     """
     cx = PAGE_W / 2
     numeral = _kicker_to_numeral(kicker) or "·"
+
+    # star cluster (3 small ✦ marks scattered above the kicker)
+    draw_star_cluster(c, cx, PAGE_H * 0.74, count=3, spacing=14, r=3.0)
 
     # kicker
     c.setFillColor(MUTED)
@@ -202,11 +255,14 @@ def draw_section_title(
     c.setFont(FONT_SERIF_BOLD, numeral_size)
     c.drawCentredString(cx, PAGE_H * 0.48, numeral)
 
+    # hairline-star-hairline divider under numeral (Subtle Art convention)
+    draw_star_rule(c, cx, PAGE_H * 0.40, half_w=44, r=3.0)
+
     # title
     c.setFillColor(INK)
     c.setFont(FONT_SERIF_BOLD, 28)
     heading_lines = _wrap(heading, FONT_SERIF_BOLD, 28, PAGE_W - 1.6 * INCH)
-    ty = PAGE_H * 0.36
+    ty = PAGE_H * 0.34
     for i, line in enumerate(heading_lines):
         c.drawCentredString(cx, ty - i * 32, line)
 
@@ -294,13 +350,11 @@ def draw_exercise_page(
         y_cursor -= 4
 
     if with_lines:
-        # quiet hairline divider + sans-caps label
-        c.setStrokeColor(MUTED)
-        c.setLineWidth(0.5)
-        c.line(x, y_cursor, x + 18, y_cursor)
+        # divider: small star + sans-caps label
+        draw_star(c, x + 4, y_cursor - 3, r=2.5, color=MUTED)
         c.setFont(FONT_SANS_BOLD, 8.5)
         c.setFillColor(MUTED)
-        c.drawString(x + 24, y_cursor - 3, try_it_prompt.upper())
+        c.drawString(x + 14, y_cursor - 5, try_it_prompt.upper())
         y_cursor -= 22
 
         _fill_rules(c, x, y_cursor, y + 6, w, rule_gap=22)
@@ -420,13 +474,16 @@ def draw_title_page(c: Canvas, page_num: int, title: str, subtitle: str, pen_nam
     for i, line in enumerate(sub_lines):
         c.drawCentredString(cx, y2 - 22 - i * 17, line)
 
+    # star flourish above the imprint
+    draw_star(c, cx, BOTTOM + 46, r=3.0, color=MUTED)
+
     c.setFont(FONT_SANS_BOLD, 9)
     c.setFillColor(MUTED)
     c.drawCentredString(cx, BOTTOM + 28, pen_name.upper())
 
 
 def draw_half_title(c: Canvas, page_num: int, title: str) -> None:  # noqa: ARG001
-    """Half-title — title alone, vertically centered. No rule, no folio."""
+    """Half-title — title alone, vertically centered, small star below."""
     cx = PAGE_W / 2
     c.setFillColor(INK)
     c.setFont(FONT_SERIF_BOLD, 22)
@@ -435,6 +492,8 @@ def draw_half_title(c: Canvas, page_num: int, title: str) -> None:  # noqa: ARG0
     y = PAGE_H / 2 + total_h / 2
     for i, line in enumerate(lines):
         c.drawCentredString(cx, y - i * 26, line)
+    # small star below title
+    draw_star(c, cx, y - total_h - 8, r=2.8, color=MUTED)
 
 
 def draw_copyright_page(c: Canvas, page_num: int, cfg: BookConfig, year: int) -> None:  # noqa: ARG001
@@ -502,11 +561,23 @@ def draw_body_page(
     else:
         top = y + h - 6
 
+    # Auto-suppress drop cap when the first paragraph doesn't warrant one:
+    #  - no heading (continuation page)
+    #  - a bullet list (starts with • or -)
+    #  - too-short for the cap to wrap around
+    use_drop_cap = bool(heading) and drop_cap
+    if use_drop_cap:
+        first_para = next((p for p in body if p.strip()), "")
+        if not first_para or first_para.lstrip()[:1] in "•-·":
+            use_drop_cap = False
+        elif len(first_para.split()) < 12:
+            use_drop_cap = False
+
     draw_justified_paragraphs(
         c, x, top, w, y + 6, body,
         font=FONT_SERIF, size=11.0, leading=15.0, para_gap=6.0,
         first_line_indent=10.0,
-        drop_cap_first=bool(heading) and drop_cap,
+        drop_cap_first=use_drop_cap,
         drop_cap_lines=3,
     )
 
@@ -764,7 +835,7 @@ def build_book(cfg: BookConfig, out_dir: Path, year: int = 2026) -> Path:
     draw_body_page(c, page, "", how[half:], running_head); page = show(page)  # 9
 
     # 9-10: contents + blank
-    draw_body_page(c, page, "Contents", _contents_list(), running_head)
+    draw_body_page(c, page, "Contents", _contents_list(), running_head, drop_cap=False)
     page = show(page)                            # 10
     draw_blank_page(c, page); page = show(page)  # 11
 
