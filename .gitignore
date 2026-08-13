@@ -1,3 +1,9 @@
 node_modules
 out
 .remotion
+__pycache__/
+*.pyc
+
+# KDP deliverable PDFs — commit these so the operator can download from GitHub for upload.
+!books/**/out/
+!books/**/out/*.pdf
